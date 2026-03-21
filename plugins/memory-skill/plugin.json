@@ -1,0 +1,8 @@
+{
+  "name": "memory-skill",
+  "description": "Track architectural decisions as Micro-Decision Records (MDR). Automatically checks past decisions when facing choices and saves new ones.",
+  "skills": [
+    "skills/check-mdr.md",
+    "skills/save-mdr.md"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "claude-toolbox",
+  "owner": {
+    "name": "pr0tey"
+  },
+  "plugins": [
+    {
+      "name": "memory-skill",
+      "source": "./plugins/memory-skill",
+      "description": "Track architectural decisions as Micro-Decision Records"
+    }
+  ]
+}
