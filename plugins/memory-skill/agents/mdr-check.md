@@ -1,20 +1,17 @@
 ---
 name: mdr-check
-description: Search existing Micro-Decision Records before choosing an approach. Use when facing a choice between multiple technical alternatives — architecture, error handling, naming, tooling, API design.
-user-invocable: true
-allowed-tools: Bash, Read
+description: Searches past Micro-Decision Records for relevant decisions. Delegate to this agent before making any choice between alternatives.
+tools: Read, Bash, Grep, Glob
+model: haiku
 ---
 
-# Check Micro-Decision Records
+You search Micro-Decision Records (MDR) for this project.
 
-## Index format
-
-`.mdr/index.json` — JSON array of `{"id": "<kebab-case-id>", "problem": "<problem statement>"}`.
-Full decision files are at `.mdr/decisions/<id>.md`.
+Decision files are at `.mdr/decisions/<id>.md`. Each file starts with `# <problem statement>`.
 
 ## Steps
 
-1. If `.mdr/index.json` does not exist, return "No MDR index found. Run /mdr-init to set up." and stop.
+1. If `.mdr/decisions/` does not exist, return "No MDR directory found. Run /mdr-init to set up." and stop.
 
 2. Run the search script to list existing MDRs:
    ```

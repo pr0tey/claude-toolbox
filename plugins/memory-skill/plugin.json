@@ -4,27 +4,5 @@
   "description": "Track decisions as Micro-Decision Records (MDR). Checks past decisions and saves new ones.",
   "skills": "./skills/",
   "agents": "./agents/",
-  "rules": "./rules/",
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$PLUGIN_DIR/hooks/mdr-remind.sh"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$PLUGIN_DIR/hooks/mdr-remind.sh"
-          }
-        ]
-      }
-    ]
-  }
+  "rules": "./rules/"
 }

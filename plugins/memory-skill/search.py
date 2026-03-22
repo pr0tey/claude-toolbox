@@ -1,39 +1,43 @@
 # ruff: noqa
 # type: ignore
 #!/usr/bin/env python3
-"""Search/list MDR index entries.
+"""Search/list MDR decisions by scanning .mdr/decisions/ directory.
 
 Usage:
-    python3 search.py                    # list all entries
-    python3 search.py "<keyword>"        # filter by keyword (case-insensitive)
+    python3 search.py                    # list all decisions
+    python3 search.py "<keyword>"        # filter by keyword in id + title
     python3 search.py --full "<keyword>" # also search inside decision files
 
 Output format (one per line):
-    id: problem
+    id: problem statement
 """
 
-import json
 import sys
 from pathlib import Path
 
-INDEX_PATH = Path(".mdr/index.json")
 DECISIONS_DIR = Path(".mdr/decisions")
 
 
+def extract_title(filepath):
+    """Extract problem statement from first '# ...' line."""
+    try:
+        with open(filepath) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("# "):
+                    return line[2:].strip()
+        return filepath.stem
+    except OSError:
+        return filepath.stem
+
+
 def main():
-    if not INDEX_PATH.exists():
-        print("No MDR index found.")
+    if not DECISIONS_DIR.exists():
+        print("No MDR decisions directory found.")
         return
 
-    try:
-        with open(INDEX_PATH) as f:
-            entries = json.load(f)
-    except (json.JSONDecodeError, ValueError) as e:
-        print(f"Error: index.json is corrupted: {e}", file=sys.stderr)
-        print(f"Fix or delete {INDEX_PATH} to recover.", file=sys.stderr)
-        sys.exit(1)
-
-    if not entries:
+    files = sorted(DECISIONS_DIR.glob("*.md"))
+    if not files:
         print("No decisions recorded yet.")
         return
 
@@ -46,18 +50,17 @@ def main():
     keyword = args[0].lower() if args else None
 
     found = False
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        entry_id = entry.get("id", "")
-        problem = entry.get("problem", "")
+    for filepath in files:
+        entry_id = filepath.stem
+        problem = extract_title(filepath)
 
         if keyword:
             match = keyword in problem.lower() or keyword in entry_id.lower()
             if not match and full_search:
-                decision_file = DECISIONS_DIR / f"{entry_id}.md"
-                if decision_file.exists():
-                    match = keyword in decision_file.read_text().lower()
+                try:
+                    match = keyword in filepath.read_text().lower()
+                except OSError:
+                    pass
             if not match:
                 continue
 

@@ -137,31 +137,18 @@ See [examples/error-response-format.md](plugins/memory-skill/examples/error-resp
 
 ## Troubleshooting
 
-### Corrupted index.json
-
-If you see `Error: index.json is corrupted`, the JSON file has invalid syntax.
-
-**To fix:** open `.mdr/index.json` in an editor, fix the syntax, or delete the file and recreate it from existing decision files:
-
-```bash
-# Reset to empty index
-echo "[]" > .mdr/index.json
-```
-
-Then re-add entries for each existing decision file in `.mdr/decisions/`.
-
 ### Manually editing or deleting an MDR
 
 - **Edit:** Open `.mdr/decisions/<id>.md` directly and modify the content.
-- **Delete:** Remove the file and its entry from `.mdr/index.json`.
+- **Delete:** Remove the file from `.mdr/decisions/`.
 
 ### Two decisions conflict
 
-If two MDRs contradict each other, the newer one should take precedence. Update or remove the outdated MDR to keep the index clean.
+If two MDRs contradict each other, the newer one should take precedence. Update or remove the outdated MDR.
 
-### Scripts fail with "No MDR index found"
+### Scripts fail with "No MDR decisions directory found"
 
-This is normal on first use — the index is created automatically when the first decision is saved.
+This is normal on first use — run `/mdr-init` to set up the directory structure.
 
 ### Plugin seems inactive after install
 

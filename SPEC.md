@@ -18,8 +18,9 @@ A knowledge base of decisions (`.mdr/decisions/`) with a multi-layered enforceme
 
 1. **Rules** (`.claude/rules/mdr-protocol.md`) — detailed protocol loaded at session start, survives compaction. Defines the full decision-making flow.
 2. **Hooks** (`UserPromptSubmit`, `SubagentStart`) — short `<system-reminder>` injected on every message as reinforcement.
-3. **MDR Agent** — dedicated sub-agent (haiku) that handles CHECK and SAVE operations in its own context, keeping the main conversation clean.
-4. **Skills** (`mdr-check`, `mdr-save`) — preloaded into the MDR agent, define search and save logic.
+3. **MDR Agents** — two dedicated sub-agents (haiku), each in its own context to keep the main conversation clean:
+   - `mdr-check` — synchronous, searches past decisions before any choice
+   - `mdr-save` — `background: true`, records decisions without blocking the main workflow
 
 ## Repository Structure
 
@@ -31,10 +32,9 @@ claude-toolbox/
 │   └── memory-skill/
 │       ├── plugin.json
 │       ├── agents/
-│       │   └── mdr.md              # MDR sub-agent definition
+│       │   ├── mdr-check.md       # Search agent (synchronous)
+│       │   └── mdr-save.md        # Save agent (background: true)
 │       ├── skills/
-│       │   ├── mdr-check/SKILL.md  # Search past decisions
-│       │   ├── mdr-save/SKILL.md   # Save new decisions
 │       │   └── mdr-init/SKILL.md   # Initialize MDR in a project
 │       ├── hooks/
 │       │   └── mdr-remind.sh       # Short reminder hook
@@ -42,8 +42,7 @@ claude-toolbox/
 │       │   └── mdr-protocol.md     # Full decision protocol
 │       ├── examples/
 │       │   └── error-response-format.md
-│       ├── search.py               # Search/list index entries
-│       └── add-to-index.py         # Add entry to index
+│       └── search.py               # Search decisions by scanning .mdr/decisions/
 ├── SPEC.md
 └── README.md
 ```
@@ -88,7 +87,7 @@ User gives a task
   Agent analyzes the problem
        │
        ▼
-  Delegate to mdr agent: CHECK
+  Delegate to mdr-check agent
        │
        ▼
   Relevant MDR found? ──yes──▶ Apply existing decision
@@ -107,18 +106,18 @@ User gives a task
   details with user
        │
        ▼
-  Delegate to mdr agent: SAVE
-  (agent decides whether to record)
+  Proceed with the task immediately
        │
        ▼
-  Proceed with the task
+  Delegate to mdr-save agent
+  (background: true, non-blocking)
 ```
 
 Key rules:
 - Every confirmed choice between alternatives = separate decision
-- User rejection or correction = new decision → SAVE before fixing
+- User rejection or correction = new decision → delegate to mdr-save agent (background), then fix
 - Existing MDR = already approved → apply without re-asking
-- Agent MUST delegate to mdr agent, MUST NOT judge "worthiness" itself
+- Agent MUST delegate to mdr-save agent, MUST NOT judge "worthiness" itself
 - Agent MAY use other persistence tools (memory, feedback) for other purposes
 
 ## Components
@@ -133,49 +132,32 @@ Loaded at session start, survives compaction. Contains:
 
 ### 2. Hook: `mdr-remind.sh`
 
-Fires on `UserPromptSubmit` and `SubagentStart`. Two-line `<system-reminder>` reinforcement. Filters out the mdr agent itself to avoid circular instructions.
+Fires on `UserPromptSubmit` and `SubagentStart`. Two-line `<system-reminder>` reinforcement. Filters out mdr-check and mdr-save agents to avoid circular instructions.
 
-### 3. MDR Agent: `mdr.md`
+### 3. MDR Agents
 
+**`mdr-check.md`** — search agent (synchronous)
 - Model: haiku (fast, cheap)
-- Skills preloaded: mdr-check, mdr-save
+- Tools: Read, Bash, Grep, Glob
+- Runs in foreground — caller waits for search results
+
+**`mdr-save.md`** — save agent (`background: true`)
+- Model: haiku (fast, cheap)
 - Tools: Read, Write, Bash, Grep, Glob
-- Two tasks: CHECK (search) and SAVE (record)
-- Runs in its own context — does not pollute main conversation
+- Runs in background automatically — caller proceeds immediately
 
-### 4. Skill: `mdr-check`
-
-Purely search-focused. Steps:
-1. Check if `.mdr/index.json` exists
-2. Search with `search.py` (all or by keyword)
-3. If found — return decisions with full content
-4. If not found — return "No relevant past decisions found"
-
-Does NOT make decisions about what to do with results. That logic lives in the protocol (rules).
-
-### 5. Skill: `mdr-save`
-
-Records confirmed decisions. Steps:
-0. Reusability check — save by default, skip ONLY if decision cannot apply to any other part of the project or future task. When in doubt — save.
-1. Search for existing related MDR — update (supersede/refine) if found
-2. Create new MDR file + index entry if no related MDR exists
-3. Report what was saved/updated
-
-Problem statements must be generalized (category, not instance).
-
-### 6. Skill: `mdr-init`
+### 4. Skill: `mdr-init` (user-invocable)
 
 One-time setup for a project. Copies from plugin to project:
 - Scripts → `.claude/mdr/`
-- Agent → `.claude/agents/mdr.md`
-- Skills → `.claude/skills/`
+- Agents → `.claude/agents/mdr-check.md`, `.claude/agents/mdr-save.md`
 - Rules → `.claude/rules/`
 - Hooks → `.claude/settings.json`
-- Creates `.mdr/decisions/` and `index.json`
+- Creates `.mdr/decisions/`
 
 Re-running is safe: updates files, preserves data.
 
-### 7. Decision File Template
+### 5. Decision File Template
 
 ```markdown
 # <Problem statement>
@@ -192,17 +174,9 @@ Re-running is safe: updates files, preserves data.
 <Why rejected>
 ```
 
-### 8. Index Format: `index.json`
+### 6. Scripts
 
-```json
-[{"id": "<kebab-case-id>", "problem": "<problem statement>"}]
-```
-
-### 9. Scripts
-
-**`search.py`** — Pure Python 3, no dependencies. Lists/filters index entries. Output: `id: problem` (one per line). Supports `--full` for content search.
-
-**`add-to-index.py`** — Pure Python 3, no dependencies. Validates kebab-case id, appends to index. Atomic writes (tmp + rename).
+**`search.py`** — Pure Python 3, no dependencies. Scans `.mdr/decisions/*.md`, extracts problem statement from `# ...` heading. Output: `id: problem` (one per line). Supports `--full` for content search inside files.
 
 ## MDR Storage
 
@@ -213,18 +187,14 @@ Scripts in `.claude/mdr/`, decisions in `.mdr/`:
 ├── .claude/
 │   ├── mdr/
 │   │   ├── search.py
-│   │   ├── add-to-index.py
 │   │   └── mdr-remind.sh
 │   ├── agents/
-│   │   └── mdr.md
-│   ├── skills/
-│   │   ├── mdr-check/SKILL.md
-│   │   └── mdr-save/SKILL.md
+│   │   ├── mdr-check.md
+│   │   └── mdr-save.md
 │   ├── rules/
 │   │   └── mdr-protocol.md
 │   └── settings.json (hooks)
 └── .mdr/
-    ├── index.json
     └── decisions/
         ├── error-response-format.md
         └── ...
@@ -236,11 +206,11 @@ Scripts in `.claude/mdr/`, decisions in `.mdr/`:
 - **Multi-layer enforcement**: Rules (detailed, persistent) + hooks (short, per-message) — neither alone is sufficient.
 - **Aggressive tone in rules is intentional**: Rules and hooks use strong language ("FORBIDDEN", "MUST") because softer phrasing degrades LLM compliance. The tone in machine-facing files (rules, hooks) serves a different purpose than human-facing docs (README, SPEC).
 - **`<system-reminder>` tags**: Hooks use XML tags that the agent treats as system-level instructions — the strongest influence short of actual system prompt.
-- **Dedicated sub-agent**: MDR operations run in a separate context (haiku) to avoid polluting the main conversation with search/save noise.
+- **Two dedicated sub-agents**: CHECK (synchronous) and SAVE (`background: true`) run in separate contexts (haiku). CHECK blocks because the caller needs the result before deciding. SAVE runs in background to avoid blocking the main workflow.
 - **Plugin hooks unreliable**: Plugin-level hooks from `plugin.json` may not load. `mdr-init` copies hooks to local `.claude/settings.json` as a reliable fallback.
-- **Reusability filter in sub-agent**: The main agent always delegates SAVE. The mdr agent (not the main agent) decides whether a decision is worth recording. This prevents the main agent from self-filtering.
+- **Reusability filter in sub-agent**: The main agent always delegates SAVE. The mdr-save agent (not the main agent) decides whether a decision is worth recording. This prevents the main agent from self-filtering.
 - **Existing MDR = no re-asking**: Past decisions are already approved. Applying them without confirmation is a feature, not a bug.
-- **No categories or tags**: Search by problem description. Keeps index minimal.
+- **No index file**: Decisions are discovered by scanning `.mdr/decisions/*.md`. Each file = one decision, title = problem statement. No shared JSON index means no git merge conflicts when multiple branches add decisions.
 - **Generalized problem statements**: "Retry strategy for external API calls" not "retries for service X". Ensures discoverability across contexts.
 
 ## Future Ideas

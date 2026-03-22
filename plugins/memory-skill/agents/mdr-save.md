@@ -1,11 +1,14 @@
 ---
 name: mdr-save
-description: Save a new Micro-Decision Record after a choice is made. Use when the user confirms or agrees on an approach between alternatives.
-user-invocable: true
-allowed-tools: Read, Write, Bash
+description: Records a confirmed decision as a Micro-Decision Record. Delegate to this agent after any confirmed choice between alternatives.
+tools: Read, Write, Bash, Grep, Glob
+model: haiku
+background: true
 ---
 
-# Save Micro-Decision Record
+You record Micro-Decision Records (MDR) for this project.
+
+The caller will provide: the decision made, alternatives considered, and reasoning.
 
 ## Step 0 — Reusability check
 
@@ -34,7 +37,16 @@ python3 .claude/mdr/search.py "<keyword>"
    - Use only lowercase letters, digits, and hyphens
    - Keep it concise but descriptive (2-4 words)
 
-2. Create the decision file at `.mdr/decisions/<id>.md` using this template:
+2. Ensure the decisions directory exists:
+   ```
+   mkdir -p .mdr/decisions
+   ```
+
+3. Check if `.mdr/decisions/<id>.md` already exists:
+   - If same decision — skip, inform caller it's already recorded
+   - If different decision — append a numeric suffix (`-v2`, `-v3`, etc.)
+
+4. Create the decision file at `.mdr/decisions/<id>.md` using this template:
 
    ```markdown
    # <Problem statement>
@@ -54,20 +66,9 @@ python3 .claude/mdr/search.py "<keyword>"
    <Why rejected>
    ```
 
-3. Add the entry to the index:
-   ```
-   python3 .claude/mdr/add-to-index.py "<id>" "<problem statement>"
-   ```
-
-4. **If add-to-index.py reports the ID already exists:**
-   - Read the existing `.mdr/decisions/<id>.md` to check if it's the same decision
-   - If same decision — skip, inform caller it's already recorded
-   - If different decision — append a numeric suffix (`-v2`, `-v3`, etc.) and retry
-
 ### Updating an existing MDR
 
 1. Edit the existing `.mdr/decisions/<id>.md` file directly.
-2. Do NOT create a new index entry — the existing one is sufficient.
 
 ## Step 3 — Report
 
