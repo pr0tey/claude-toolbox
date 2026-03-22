@@ -18,16 +18,16 @@ Full decision files are at `.mdr/decisions/<id>.md`.
 
 2. Run the search script to list existing MDRs:
    ```
-   python .claude/mdr/search.py
+   python3 .claude/mdr/search.py
    ```
 
 3. If a keyword is relevant to the current choice, filter:
    ```
-   python .claude/mdr/search.py "<keyword>"
+   python3 .claude/mdr/search.py "<keyword>"
    ```
    For deeper search inside decision files:
    ```
-   python .claude/mdr/search.py --full "<keyword>"
+   python3 .claude/mdr/search.py --full "<keyword>"
    ```
 
 4. **If relevant MDRs exist:**

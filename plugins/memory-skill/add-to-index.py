@@ -4,7 +4,7 @@
 """Add a new entry to the MDR index.
 
 Usage:
-    python add-to-index.py "<id>" "<problem statement>"
+    python3 add-to-index.py "<id>" "<problem statement>"
 
 Creates index.json and directories if they don't exist.
 Writes atomically via tmp file + rename.
@@ -23,7 +23,7 @@ KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python add-to-index.py <id> <problem>", file=sys.stderr)
+        print("Usage: python3 add-to-index.py <id> <problem>", file=sys.stderr)
         sys.exit(1)
 
     entry_id = sys.argv[1].strip()

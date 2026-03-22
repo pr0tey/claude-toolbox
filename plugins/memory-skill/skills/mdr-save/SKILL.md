@@ -17,7 +17,7 @@ If skipped — inform the caller: "This decision is too specific to record." The
 
 Search for an existing MDR that covers the same topic:
 ```
-python .claude/mdr/search.py "<keyword>"
+python3 .claude/mdr/search.py "<keyword>"
 ```
 
 - **If a closely related MDR exists** — read `.mdr/decisions/<id>.md` and decide:
@@ -56,7 +56,7 @@ python .claude/mdr/search.py "<keyword>"
 
 3. Add the entry to the index:
    ```
-   python .claude/mdr/add-to-index.py "<id>" "<problem statement>"
+   python3 .claude/mdr/add-to-index.py "<id>" "<problem statement>"
    ```
 
 4. **If add-to-index.py reports the ID already exists:**

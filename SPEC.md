@@ -2,17 +2,19 @@
 
 ## Overview
 
-A plugin for Claude Code that **forces the agent to discuss ALL decisions with the user** before acting. MDR files are a secondary tool — they store past decisions to reduce repetitive discussions and maintain consistency.
+A plugin for Claude Code that builds a **persistent knowledge base of project decisions**. When the same type of choice comes up again — error handling, naming, architecture, tooling — the agent finds and applies the past decision instead of making an inconsistent one or asking the user to repeat themselves.
+
+Discussions with the user are the mechanism for populating the knowledge base: when no prior decision exists, the agent presents options and waits for the user's choice before acting.
 
 Part of the **claude-toolbox** marketplace.
 
 ## Problem
 
-AI agents make decisions silently — choosing libraries, patterns, error handling strategies — without consulting the user. This leads to unwanted implementations, wasted time on reverts, and inconsistent choices across sessions.
+The same types of decisions come up repeatedly across sessions — error handling strategy, naming conventions, library choices, architecture patterns. Without persistent memory, the agent either silently picks an approach (risking unwanted implementations and reverts) or asks the user to re-decide something they already settled last week.
 
 ## Solution
 
-A multi-layered enforcement system:
+A knowledge base of decisions (`.mdr/decisions/`) with a multi-layered enforcement system that ensures the agent always checks it and populates it through user discussions:
 
 1. **Rules** (`.claude/rules/mdr-protocol.md`) — detailed protocol loaded at session start, survives compaction. Defines the full decision-making flow.
 2. **Hooks** (`UserPromptSubmit`, `SubagentStart`) — short `<system-reminder>` injected on every message as reinforcement.
@@ -124,7 +126,7 @@ Key rules:
 ### 1. Rules: `mdr-protocol.md`
 
 Loaded at session start, survives compaction. Contains:
-- Core rule (FORBIDDEN to act without approval)
+- Core rule (always check existing decisions before acting)
 - Step-by-step protocol
 - When to delegate SAVE (includes rejections/corrections)
 - When NOT to start the protocol (questions, no-choice steps)
@@ -230,8 +232,9 @@ Scripts in `.claude/mdr/`, decisions in `.mdr/`:
 
 ## Design Decisions
 
-- **Force discussion, not just record**: The primary goal is preventing silent decisions. MDR files are a secondary benefit for consistency.
+- **Knowledge base first, discussion as mechanism**: The primary goal is a persistent, reusable decision base. Discussions with the user are how it gets populated — not the end goal themselves.
 - **Multi-layer enforcement**: Rules (detailed, persistent) + hooks (short, per-message) — neither alone is sufficient.
+- **Aggressive tone in rules is intentional**: Rules and hooks use strong language ("FORBIDDEN", "MUST") because softer phrasing degrades LLM compliance. The tone in machine-facing files (rules, hooks) serves a different purpose than human-facing docs (README, SPEC).
 - **`<system-reminder>` tags**: Hooks use XML tags that the agent treats as system-level instructions — the strongest influence short of actual system prompt.
 - **Dedicated sub-agent**: MDR operations run in a separate context (haiku) to avoid polluting the main conversation with search/save noise.
 - **Plugin hooks unreliable**: Plugin-level hooks from `plugin.json` may not load. `mdr-init` copies hooks to local `.claude/settings.json` as a reliable fallback.

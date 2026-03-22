@@ -4,9 +4,9 @@
 """Search/list MDR index entries.
 
 Usage:
-    python search.py                    # list all entries
-    python search.py "<keyword>"        # filter by keyword (case-insensitive)
-    python search.py --full "<keyword>" # also search inside decision files
+    python3 search.py                    # list all entries
+    python3 search.py "<keyword>"        # filter by keyword (case-insensitive)
+    python3 search.py --full "<keyword>" # also search inside decision files
 
 Output format (one per line):
     id: problem
