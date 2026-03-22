@@ -6,8 +6,8 @@
   },
   "plugins": [
     {
-      "name": "memory-skill",
-      "source": "./plugins/memory-skill",
+      "name": "micro-decisions",
+      "source": "./plugins/micro-decisions",
       "description": "Track architectural decisions as Micro-Decision Records"
     }
   ]

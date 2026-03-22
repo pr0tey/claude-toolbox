@@ -18,9 +18,6 @@ Set up Micro-Decision Records for the current project.
 
 2. Copy files from the plugin:
    ```
-   # Scripts
-   cp "${CLAUDE_PLUGIN_ROOT}/search.py" .claude/mdr/search.py
-
    # Hooks
    cp "${CLAUDE_PLUGIN_ROOT}/hooks/mdr-remind.sh" .claude/mdr/mdr-remind.sh
    chmod +x .claude/mdr/mdr-remind.sh
@@ -64,4 +61,4 @@ Set up Micro-Decision Records for the current project.
 
 4. Inform the user:
    > MDR initialized. Restart your Claude Code session to activate rules.
-   > Scripts: `.claude/mdr/`, agents: `.claude/agents/mdr-check.md` + `mdr-save.md`, rules: `.claude/rules/`, decisions: `.mdr/decisions/`, hooks: `.claude/settings.json`.
+   > Hooks: `.claude/mdr/`, agents: `.claude/agents/mdr-check.md` + `mdr-save.md`, rules: `.claude/rules/`, decisions: `.mdr/decisions/`, settings: `.claude/settings.json`.

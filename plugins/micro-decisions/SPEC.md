@@ -6,7 +6,7 @@ A plugin for Claude Code that builds a **persistent knowledge base of project de
 
 Discussions with the user are the mechanism for populating the knowledge base: when no prior decision exists, the agent presents options and waits for the user's choice before acting.
 
-Part of the **claude-toolbox** marketplace.
+Part of the [claude-toolbox](../../README.md) marketplace.
 
 ## Problem
 
@@ -25,56 +25,38 @@ A knowledge base of decisions (`.mdr/decisions/`) with a multi-layered enforceme
 ## Repository Structure
 
 ```
-claude-toolbox/
-├── .claude-plugin/
-│   └── marketplace.json
-├── plugins/
-│   └── memory-skill/
-│       ├── plugin.json
-│       ├── agents/
-│       │   ├── mdr-check.md       # Search agent (synchronous)
-│       │   └── mdr-save.md        # Save agent (background: true)
-│       ├── skills/
-│       │   └── mdr-init/SKILL.md   # Initialize MDR in a project
-│       ├── hooks/
-│       │   └── mdr-remind.sh       # Short reminder hook
-│       ├── rules/
-│       │   └── mdr-protocol.md     # Full decision protocol
-│       ├── examples/
-│       │   └── error-response-format.md
-│       └── search.py               # Search decisions by scanning .mdr/decisions/
-├── SPEC.md
-└── README.md
+plugins/micro-decisions/
+├── plugin.json
+├── SPEC.md                 # This file
+├── README.md               # User-facing docs
+├── agents/
+│   ├── mdr-check.md        # Search agent (synchronous)
+│   └── mdr-save.md         # Save agent (background: true)
+├── skills/
+│   └── mdr-init/SKILL.md   # Initialize MDR in a project
+├── hooks/
+│   └── mdr-remind.sh       # Short reminder hook
+├── rules/
+│   └── mdr-protocol.md     # Full decision protocol
+└── examples/
+    └── error-response-format.md
+
+tests/micro-decisions/
+└── e2e/
+    └── test_mdr_protocol.py   # E2E test suite (13 scenarios)
 ```
 
 ## Plugin Installation
 
-Add the marketplace to settings:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "claude-toolbox": {
-      "source": {
-        "source": "github",
-        "repo": "pr0tey/claude-toolbox"
-      }
-    }
-  }
-}
+```shell
+/plugin marketplace add pr0tey/claude-toolbox
+/plugin install micro-decisions@claude-toolbox
+/reload-plugins
 ```
 
-Enable the plugin:
+Then run `/micro-decisions:mdr-init` in the target project to set up local files and hooks.
 
-```json
-{
-  "enabledPlugins": {
-    "memory-skill@claude-toolbox": true
-  }
-}
-```
-
-Then run `/mdr-init` in the target project to set up local files and hooks.
+For team-wide setup via `settings.json`, see the [Claude Code docs](https://code.claude.com/docs/en/discover-plugins#configure-team-marketplaces).
 
 ## Decision Protocol
 
@@ -132,19 +114,23 @@ Loaded at session start, survives compaction. Contains:
 
 ### 2. Hook: `mdr-remind.sh`
 
-Fires on `UserPromptSubmit` and `SubagentStart`. Two-line `<system-reminder>` reinforcement. Filters out mdr-check and mdr-save agents to avoid circular instructions.
+Fires on `UserPromptSubmit` and `SubagentStart`. Two-line `<system-reminder>` reinforcement. Filters out mdr-check and mdr-save agents to avoid circular instructions. Uses a grep fallback when `agent_type` field is missing or empty from the JSON input.
 
 ### 3. MDR Agents
 
 **`mdr-check.md`** — search agent (synchronous)
 - Model: haiku (fast, cheap)
-- Tools: Read, Bash, Grep, Glob
+- Tools: Read, Grep, Glob
 - Runs in foreground — caller waits for search results
+- Extracts 2-3 technical keywords from the caller's problem description
+- Matches by category of decision, not surface context
 
 **`mdr-save.md`** — save agent (`background: true`)
 - Model: haiku (fast, cheap)
-- Tools: Read, Write, Bash, Grep, Glob
+- Tools: Read, Write, Edit, Grep, Glob
 - Runs in background automatically — caller proceeds immediately
+- Step 1 (check for existing related MDR) is mandatory — must read every matched file before creating a new one
+- Prefers Edit over Write when updating existing MDRs to avoid content loss
 
 ### 4. Skill: `mdr-init` (user-invocable)
 
@@ -174,19 +160,14 @@ Re-running is safe: updates files, preserves data.
 <Why rejected>
 ```
 
-### 6. Scripts
-
-**`search.py`** — Pure Python 3, no dependencies. Scans `.mdr/decisions/*.md`, extracts problem statement from `# ...` heading. Output: `id: problem` (one per line). Supports `--full` for content search inside files.
-
 ## MDR Storage
 
-Scripts in `.claude/mdr/`, decisions in `.mdr/`:
+Hooks in `.claude/mdr/`, decisions in `.mdr/`:
 
 ```
 <user-project>/
 ├── .claude/
 │   ├── mdr/
-│   │   ├── search.py
 │   │   └── mdr-remind.sh
 │   ├── agents/
 │   │   ├── mdr-check.md
@@ -210,8 +191,35 @@ Scripts in `.claude/mdr/`, decisions in `.mdr/`:
 - **Plugin hooks unreliable**: Plugin-level hooks from `plugin.json` may not load. `mdr-init` copies hooks to local `.claude/settings.json` as a reliable fallback.
 - **Reusability filter in sub-agent**: The main agent always delegates SAVE. The mdr-save agent (not the main agent) decides whether a decision is worth recording. This prevents the main agent from self-filtering.
 - **Existing MDR = no re-asking**: Past decisions are already approved. Applying them without confirmation is a feature, not a bug.
-- **No index file**: Decisions are discovered by scanning `.mdr/decisions/*.md`. Each file = one decision, title = problem statement. No shared JSON index means no git merge conflicts when multiple branches add decisions.
+- **No index file**: Decisions are discovered by agents using Glob/Grep on `.mdr/decisions/*.md`. Each file = one decision, title = problem statement. No shared JSON index means no git merge conflicts when multiple branches add decisions.
+- **No search script**: Agents use built-in tools (Glob, Grep, Read) to find and read decisions. This eliminates a Python dependency and simplifies the plugin — agents already have the tools they need.
 - **Generalized problem statements**: "Retry strategy for external API calls" not "retries for service X". Ensures discoverability across contexts.
+
+## Testing
+
+E2E tests in `tests/micro-decisions/e2e/test_mdr_protocol.py` run Claude Code headlessly against a synthetic project with the MDR plugin installed. Each test creates a temporary project, runs one or more Claude turns, and verifies protocol behavior.
+
+**Test suites:**
+
+| Suite | Tests | What it covers |
+|-------|-------|----------------|
+| `smoke` | 4 | Core flows: check existing, save new, update, user rejection |
+| `corner` | 7 | Edge cases: questions, two decisions per session, partial match, missing directory, refinement updates, duplicate skip, reusability skip |
+| `realistic` | 2 | Coding tasks with no MDR hints in the prompt |
+
+**Run:**
+```bash
+make test              # all 13 tests
+make test-mdr-smoke    # smoke only
+make test-mdr-corner   # corner cases only
+make test-mdr-realistic # realistic scenarios only
+```
+
+Single test: `python3 tests/micro-decisions/e2e/test_mdr_protocol.py <test_name>`
+
+**Requirements:** Claude Code CLI installed and authenticated, ~$1-2 per full run (sub-agents use haiku).
+
+**Artifacts:** Failed tests dump traces to `tests/micro-decisions/e2e/test-artifacts/` for debugging.
 
 ## Future Ideas
 

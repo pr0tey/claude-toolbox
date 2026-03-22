@@ -1,5 +1,5 @@
 {
-  "name": "memory-skill",
+  "name": "micro-decisions",
   "version": "0.3.0",
   "description": "Track decisions as Micro-Decision Records (MDR). Checks past decisions and saves new ones.",
   "skills": "./skills/",
