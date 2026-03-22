@@ -1,8 +1,30 @@
 {
   "name": "memory-skill",
-  "description": "Track architectural decisions as Micro-Decision Records (MDR). Automatically checks past decisions when facing choices and saves new ones.",
-  "skills": [
-    "skills/check-mdr.md",
-    "skills/save-mdr.md"
-  ]
+  "version": "0.3.0",
+  "description": "Track decisions as Micro-Decision Records (MDR). Checks past decisions and saves new ones.",
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "rules": "./rules/",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$PLUGIN_DIR/hooks/mdr-remind.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$PLUGIN_DIR/hooks/mdr-remind.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

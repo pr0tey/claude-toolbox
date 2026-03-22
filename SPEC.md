@@ -2,56 +2,53 @@
 
 ## Overview
 
-A plugin for Claude Code that builds a project-level knowledge base of decisions. When the agent faces a choice between multiple approaches, it checks existing decisions first, and if none exist — discusses with the user and saves the outcome.
+A plugin for Claude Code that **forces the agent to discuss ALL decisions with the user** before acting. MDR files are a secondary tool — they store past decisions to reduce repetitive discussions and maintain consistency.
 
 Part of the **claude-toolbox** marketplace.
 
 ## Problem
 
-When working on a project, the same types of decisions come up repeatedly — error handling, naming, architecture patterns, tooling choices, etc. Without a memory of past decisions, the agent either asks the user again or makes inconsistent choices.
+AI agents make decisions silently — choosing libraries, patterns, error handling strategies — without consulting the user. This leads to unwanted implementations, wasted time on reverts, and inconsistent choices across sessions.
 
 ## Solution
 
-Two auto-invoked skills working together:
+A multi-layered enforcement system:
 
-- **check-mdr** (auto-invoked): checks the MDR index whenever Claude sees multiple possible approaches
-- **save-mdr** (auto-invoked): saves new decisions to the knowledge base
-
-Additionally, the plugin recommends adding a line to the project's `CLAUDE.md` to reinforce the behavior:
-
-```markdown
-## Decision Records
-This project uses memory-skill plugin for tracking architectural decisions.
-When facing a choice between approaches, always check existing MDRs first.
-```
-
-This gives two levels of reliability:
-1. Skills with good descriptions — Claude invokes them when it sees a decision point
-2. CLAUDE.md — hard rule in project context, Claude cannot "forget"
+1. **Rules** (`.claude/rules/mdr-protocol.md`) — detailed protocol loaded at session start, survives compaction. Defines the full decision-making flow.
+2. **Hooks** (`UserPromptSubmit`, `SubagentStart`) — short `<system-reminder>` injected on every message as reinforcement.
+3. **MDR Agent** — dedicated sub-agent (haiku) that handles CHECK and SAVE operations in its own context, keeping the main conversation clean.
+4. **Skills** (`mdr-check`, `mdr-save`) — preloaded into the MDR agent, define search and save logic.
 
 ## Repository Structure
-
-This repository is a **Claude Code plugin marketplace** (`claude-toolbox`). Each plugin lives in its own directory under `plugins/`.
 
 ```
 claude-toolbox/
 ├── .claude-plugin/
-│   └── marketplace.json          # Marketplace descriptor
+│   └── marketplace.json
 ├── plugins/
 │   └── memory-skill/
-│       ├── plugin.json           # Plugin descriptor
+│       ├── plugin.json
+│       ├── agents/
+│       │   └── mdr.md              # MDR sub-agent definition
 │       ├── skills/
-│       │   ├── check-mdr.md      # Skill: check existing MDRs
-│       │   └── save-mdr.md       # Skill: save a new MDR
-│       ├── search.py             # Script: search/list index
-│       └── add-to-index.py       # Script: add entry to index
+│       │   ├── mdr-check/SKILL.md  # Search past decisions
+│       │   ├── mdr-save/SKILL.md   # Save new decisions
+│       │   └── mdr-init/SKILL.md   # Initialize MDR in a project
+│       ├── hooks/
+│       │   └── mdr-remind.sh       # Short reminder hook
+│       ├── rules/
+│       │   └── mdr-protocol.md     # Full decision protocol
+│       ├── examples/
+│       │   └── error-response-format.md
+│       ├── search.py               # Search/list index entries
+│       └── add-to-index.py         # Add entry to index
 ├── SPEC.md
 └── README.md
 ```
 
 ## Plugin Installation
 
-User adds the marketplace to their settings:
+Add the marketplace to settings:
 
 ```json
 {
@@ -66,7 +63,7 @@ User adds the marketplace to their settings:
 }
 ```
 
-Then enables the plugin:
+Enable the plugin:
 
 ```json
 {
@@ -76,63 +73,107 @@ Then enables the plugin:
 }
 ```
 
-## Components
+Then run `/mdr-init` in the target project to set up local files and hooks.
 
-### 1. Marketplace: `.claude-plugin/marketplace.json`
+## Decision Protocol
 
-```json
-{
-  "name": "claude-toolbox",
-  "owner": {
-    "name": "pr0tey"
-  },
-  "plugins": [
-    {
-      "name": "memory-skill",
-      "source": "./plugins/memory-skill",
-      "description": "Track architectural decisions as Micro-Decision Records"
-    }
-  ]
-}
+The core behavioral contract, enforced via rules + hooks:
+
+```
+User gives a task
+       │
+       ▼
+  Agent analyzes the problem
+       │
+       ▼
+  Delegate to mdr agent: CHECK
+       │
+       ▼
+  Relevant MDR found? ──yes──▶ Apply existing decision
+       │                        (already approved, no re-asking)
+       no
+       │
+       ▼
+  Present ≥2 approaches
+  with trade-offs
+       │
+       ▼
+  WAIT for user choice
+       │
+       ▼
+  Discuss implementation
+  details with user
+       │
+       ▼
+  Delegate to mdr agent: SAVE
+  (agent decides whether to record)
+       │
+       ▼
+  Proceed with the task
 ```
 
-### 2. Plugin: `plugins/memory-skill/plugin.json`
+Key rules:
+- Every confirmed choice between alternatives = separate decision
+- User rejection or correction = new decision → SAVE before fixing
+- Existing MDR = already approved → apply without re-asking
+- Agent MUST delegate to mdr agent, MUST NOT judge "worthiness" itself
+- Agent MAY use other persistence tools (memory, feedback) for other purposes
 
-Standard Claude Code plugin descriptor pointing to the two skills.
+## Components
 
-### 3. Skill: `check-mdr`
+### 1. Rules: `mdr-protocol.md`
 
-Frontmatter:
-- name: check-mdr
-- description: Check existing Micro-Decision Records when facing a choice between multiple approaches to any task — code, architecture, tooling, naming, processes
-- user-invocable: false
-- allowed-tools: Bash, Read
+Loaded at session start, survives compaction. Contains:
+- Core rule (FORBIDDEN to act without approval)
+- Step-by-step protocol
+- When to delegate SAVE (includes rejections/corrections)
+- When NOT to start the protocol (questions, no-choice steps)
 
-Behavior:
+### 2. Hook: `mdr-remind.sh`
 
-1. Run `search.py` to list existing MDRs
-2. If a keyword is relevant, run `search.py "<keyword>"` to filter
-3. If a relevant MDR exists — open the decision file at `.claude/mdr/decisions/<id>.md`, inform the user "Applying existing decision: <name>", and follow it
-4. If no relevant MDR exists — search the codebase for similar patterns/approaches. If found, include them as one of the options marked "(already used in codebase)"
-5. Present options to the user, discuss until a decision is made
-6. Once decided — save the MDR (Claude auto-invokes save-mdr)
+Fires on `UserPromptSubmit` and `SubagentStart`. Two-line `<system-reminder>` reinforcement. Filters out the mdr agent itself to avoid circular instructions.
 
-### 4. Skill: `save-mdr`
+### 3. MDR Agent: `mdr.md`
 
-Frontmatter:
-- name: save-mdr
-- description: Save a new Micro-Decision Record when a choice between alternatives has been made
-- user-invocable: false
-- allowed-tools: Read, Write, Bash
+- Model: haiku (fast, cheap)
+- Skills preloaded: mdr-check, mdr-save
+- Tools: Read, Write, Bash, Grep, Glob
+- Two tasks: CHECK (search) and SAVE (record)
+- Runs in its own context — does not pollute main conversation
 
-Behavior:
+### 4. Skill: `mdr-check`
 
-1. Generate a short kebab-case id from the problem (e.g. `error-response-format`)
-2. Create `.claude/mdr/decisions/<id>.md` using the template (see below)
-3. Run `add-to-index.py "<id>" "<problem statement>"` to add to index
-4. Inform the user what was saved
+Purely search-focused. Steps:
+1. Check if `.mdr/index.json` exists
+2. Search with `search.py` (all or by keyword)
+3. If found — return decisions with full content
+4. If not found — return "No relevant past decisions found"
 
-### 5. Decision File Template
+Does NOT make decisions about what to do with results. That logic lives in the protocol (rules).
+
+### 5. Skill: `mdr-save`
+
+Records confirmed decisions. Steps:
+0. Reusability check — save by default, skip ONLY if decision cannot apply to any other part of the project or future task. When in doubt — save.
+1. Search for existing related MDR — update (supersede/refine) if found
+2. Create new MDR file + index entry if no related MDR exists
+3. Report what was saved/updated
+
+Problem statements must be generalized (category, not instance).
+
+### 6. Skill: `mdr-init`
+
+One-time setup for a project. Copies from plugin to project:
+- Scripts → `.claude/mdr/`
+- Agent → `.claude/agents/mdr.md`
+- Skills → `.claude/skills/`
+- Rules → `.claude/rules/`
+- Hooks → `.claude/settings.json`
+- Creates `.mdr/decisions/` and `index.json`
+
+Re-running is safe: updates files, preserves data.
+
+### 7. Decision File Template
 
 ```markdown
 # <Problem statement>
@@ -147,100 +188,58 @@ Behavior:
 
 ### <Alternative 1>
 <Why rejected>
-
-### <Alternative 2>
-<Why rejected>
 ```
 
-### 6. Index Format: `index.json`
+### 8. Index Format: `index.json`
 
 ```json
-[]
+[{"id": "<kebab-case-id>", "problem": "<problem statement>"}]
 ```
 
-Each entry:
-```json
-{"id": "<kebab-case-id>", "problem": "<problem statement>"}
-```
+### 9. Scripts
 
-The problem statement should describe the essence of the decision, not the context where it was first made. This ensures the MDR is discoverable in any future context.
+**`search.py`** — Pure Python 3, no dependencies. Lists/filters index entries. Output: `id: problem` (one per line). Supports `--full` for content search.
 
-### 7. Script: `add-to-index.py`
+**`add-to-index.py`** — Pure Python 3, no dependencies. Validates kebab-case id, appends to index. Atomic writes (tmp + rename).
 
-- Pure Python, standard library only (json module), no dependencies
-- Arguments: `<id>` `<problem>`
-- Reads index.json, appends new entry, writes back
-- Atomic: write to tmp file, then rename
+## MDR Storage
 
-### 8. Script: `search.py`
-
-- Pure Python, standard library only, no dependencies
-- No arguments: lists all entries, one per line, format `id: problem`
-- Optional argument: keyword — filters entries by case-insensitive substring match in problem field
-- Compact output, no JSON syntax — saves context tokens
-
-## MDR Storage Location
-
-MDR files are stored in the **user's project**, not in the plugin:
+Scripts in `.claude/mdr/`, decisions in `.mdr/`:
 
 ```
 <user-project>/
-└── .claude/
-    └── mdr/
-        ├── index.json
-        └── decisions/
-            ├── error-response-format.md
-            └── ...
-```
-
-The scripts in the plugin operate on `.claude/mdr/` relative to the current working directory.
-
-## Behavior Flow
-
-```
-Claude faces a choice
-       │
-       ▼
-  check-mdr skill auto-invoked
-       │
-       ▼
-  Run search.py
-       │
-       ▼
-  Relevant MDR found? ──yes──▶ Open decisions/<id>.md
-       │                        Inform user: "Applying decision: <name>"
-       no                       Follow the decision
-       │
-       ▼
-  Search codebase for
-  existing patterns
-       │
-       ▼
-  Present options to user
-  (including codebase patterns
-   marked "already used in codebase")
-       │
-       ▼
-  User chooses / discusses
-       │
-       ▼
-  Decision made
-       │
-       ▼
-  save-mdr skill auto-invoked:
-  - Write decisions/<id>.md
-  - Run add-to-index.py
-  - Inform user what was saved
+├── .claude/
+│   ├── mdr/
+│   │   ├── search.py
+│   │   ├── add-to-index.py
+│   │   └── mdr-remind.sh
+│   ├── agents/
+│   │   └── mdr.md
+│   ├── skills/
+│   │   ├── mdr-check/SKILL.md
+│   │   └── mdr-save/SKILL.md
+│   ├── rules/
+│   │   └── mdr-protocol.md
+│   └── settings.json (hooks)
+└── .mdr/
+    ├── index.json
+    └── decisions/
+        ├── error-response-format.md
+        └── ...
 ```
 
 ## Design Decisions
 
-- **Plugin, not rule**: Distributed as a Claude Code plugin via marketplace. The rule behavior is replaced by a skill with a precise description that triggers auto-invocation.
-- **CLAUDE.md recommendation**: The plugin README recommends adding a line to the project's CLAUDE.md as a second reliability layer.
-- **No categories or tags**: Claude matches by problem description. Keeps index minimal and avoids the problem of decisions being relevant outside their original category.
-- **No deprecation mechanism**: Delete or update MDR files manually when they become outdated.
-- **No user confirmation on save**: Claude saves immediately, shows what was saved. User can edit later if needed.
-- **No user confirmation on apply**: Claude informs but does not block waiting for approval.
-- **Edit-safe index updates**: A Python script handles index.json writes to avoid Claude accidentally losing entries when rewriting the file.
-- **Compact search output**: search.py outputs `id: problem` lines instead of JSON to save context tokens.
-- **Language**: All system files (skills, scripts) in English. Decision content in whatever language the team uses.
+- **Force discussion, not just record**: The primary goal is preventing silent decisions. MDR files are a secondary benefit for consistency.
+- **Multi-layer enforcement**: Rules (detailed, persistent) + hooks (short, per-message) — neither alone is sufficient.
+- **`<system-reminder>` tags**: Hooks use XML tags that the agent treats as system-level instructions — the strongest influence short of actual system prompt.
+- **Dedicated sub-agent**: MDR operations run in a separate context (haiku) to avoid polluting the main conversation with search/save noise.
+- **Plugin hooks unreliable**: Plugin-level hooks from `plugin.json` may not load. `mdr-init` copies hooks to local `.claude/settings.json` as a reliable fallback.
+- **Reusability filter in sub-agent**: The main agent always delegates SAVE. The mdr agent (not the main agent) decides whether a decision is worth recording. This prevents the main agent from self-filtering.
+- **Existing MDR = no re-asking**: Past decisions are already approved. Applying them without confirmation is a feature, not a bug.
+- **No categories or tags**: Search by problem description. Keeps index minimal.
+- **Generalized problem statements**: "Retry strategy for external API calls" not "retries for service X". Ensures discoverability across contexts.
+
+## Future Ideas
+
+- **`/mdr-import` from GitLab MR comments**: Parse merge request discussions to extract decisions. Use LLM to identify choice-between-alternatives patterns in comment threads, present to user for confirmation, save confirmed ones as MDR.
